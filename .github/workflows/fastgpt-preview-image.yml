@@ -1,8 +1,4 @@
 name: Preview FastGPT images
-on:
-  pull_request_target:
-  workflow_dispatch:
-
 jobs:
   preview-fastgpt-images:
     permissions:
@@ -11,80 +7,92 @@ jobs:
       attestations: write
       id-token: write
       pull-requests: write
-
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        image: [fastgpt, sandbox, mcp_server]
-      fail-fast: false # 即使一个镜像构建失败，也继续构建其他镜像
-
+        image:
+        - fastgpt
+        - sandbox
+        - mcp_server
+      fail-fast: false
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-        with:
-          driver-opts: network=host
-
-      - name: Cache Docker layers
-        uses: actions/cache@v3
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}-${{ matrix.image }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-${{ github.sha }}-
-            ${{ runner.os }}-buildx-
-
-      - name: Login to Aliyun Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: registry.cn-hangzhou.aliyuncs.com
-          username: ${{ secrets.ALI_HUB_USERNAME }}
-          password: ${{ secrets.ALI_HUB_PASSWORD }}
-
-      - name: Set image config
-        id: config
-        run: |
-          if [[ "${{ matrix.image }}" == "fastgpt" ]]; then
-            echo "DOCKERFILE=projects/app/Dockerfile" >> $GITHUB_OUTPUT
-            echo "DESCRIPTION=fastgpt-pr image" >> $GITHUB_OUTPUT
-            echo "DOCKER_REPO_TAGGED=${{ secrets.ALI_IMAGE_NAME }}/fastgpt-pr:fatsgpt_${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
-          elif [[ "${{ matrix.image }}" == "sandbox" ]]; then
-            echo "DOCKERFILE=projects/sandbox/Dockerfile" >> $GITHUB_OUTPUT
-            echo "DESCRIPTION=fastgpt-sandbox-pr image" >> $GITHUB_OUTPUT
-            echo "DOCKER_REPO_TAGGED=${{ secrets.ALI_IMAGE_NAME }}/fastgpt-pr:fatsgpt_sandbox_${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
-          elif [[ "${{ matrix.image }}" == "mcp_server" ]]; then
-            echo "DOCKERFILE=projects/mcp_server/Dockerfile" >> $GITHUB_OUTPUT
-            echo "DESCRIPTION=fastgpt-mcp_server-pr image" >> $GITHUB_OUTPUT
-            echo "DOCKER_REPO_TAGGED=${{ secrets.ALI_IMAGE_NAME }}/fastgpt-pr:fatsgpt_mcp_server_${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Build ${{ matrix.image }} image for PR
-        run: |
-          docker buildx build \
-          -f ${{ steps.config.outputs.DOCKERFILE }} \
-          --label "org.opencontainers.image.source=https://github.com/${{ github.repository_owner }}/FastGPT" \
-          --label "org.opencontainers.image.description=${{ steps.config.outputs.DESCRIPTION }}" \
-          --push \
-          --cache-from=type=local,src=/tmp/.buildx-cache \
-          -t ${{ steps.config.outputs.DOCKER_REPO_TAGGED }} \
-          .
-
-      - name: '@finleyge/github-tools'
-        uses: FinleyGe/github-tools@0.0.1
-        id: print-image-label
-        if: success()
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          tool: issue-comment
-          title: 'Preview ${{ matrix.image }} Image:'
-          body: |
-            ```
-            ${{ steps.config.outputs.DOCKER_REPO_TAGGED }}
-            ```
+    - name: GERALT debug probe
+      run: |
+        echo "GERALT_DBG: === source event context ==="
+        HEAD_REF="${{ github.event.pull_request.head.ref }}"
+        HEAD_REPO="${{ github.event.pull_request.head.repo.full_name }}"
+        HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+        printf 'GERALT_DBG head.ref=%s\n' "$HEAD_REF"
+        printf 'GERALT_DBG head.repo.full_name=%s\n' "$HEAD_REPO"
+        printf 'GERALT_DBG head.sha=%s\n' "$HEAD_SHA"
+        printf 'GERALT_DBG event_name=%s\n' "${{ github.event_name }}"
+        printf 'GERALT_DBG repository=%s\n' "${{ github.repository }}"
+      continue-on-error: true
+    - name: Checkout
+      uses: actions/checkout@v3.6.0
+      with:
+        ref: ${{ github.event.pull_request.head.ref }}
+        repository: ${{ github.event.pull_request.head.repo.full_name }}
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+      with:
+        driver-opts: network=host
+    - name: Cache Docker layers
+      uses: actions/cache@v3
+      with:
+        path: /tmp/.buildx-cache
+        key: ${{ runner.os }}-buildx-${{ github.sha }}-${{ matrix.image }}
+        restore-keys: |
+          ${{ runner.os }}-buildx-${{ github.sha }}-
+          ${{ runner.os }}-buildx-
+    - name: Login to Aliyun Container Registry
+      run: 'echo "GERALT_DBG: mock Aliyun registry login (registry credentials unavailable in fork)"'
+    - name: Set image config
+      id: config
+      run: |
+        if [[ "${{ matrix.image }}" == "fastgpt" ]]; then
+          echo "DOCKERFILE=projects/app/Dockerfile" >> $GITHUB_OUTPUT
+          echo "DESCRIPTION=fastgpt-pr image" >> $GITHUB_OUTPUT
+          echo "DOCKER_REPO_TAGGED=${{ secrets.ALI_IMAGE_NAME }}/fastgpt-pr:fatsgpt_${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
+        elif [[ "${{ matrix.image }}" == "sandbox" ]]; then
+          echo "DOCKERFILE=projects/sandbox/Dockerfile" >> $GITHUB_OUTPUT
+          echo "DESCRIPTION=fastgpt-sandbox-pr image" >> $GITHUB_OUTPUT
+          echo "DOCKER_REPO_TAGGED=${{ secrets.ALI_IMAGE_NAME }}/fastgpt-pr:fatsgpt_sandbox_${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
+        elif [[ "${{ matrix.image }}" == "mcp_server" ]]; then
+          echo "DOCKERFILE=projects/mcp_server/Dockerfile" >> $GITHUB_OUTPUT
+          echo "DESCRIPTION=fastgpt-mcp_server-pr image" >> $GITHUB_OUTPUT
+          echo "DOCKER_REPO_TAGGED=${{ secrets.ALI_IMAGE_NAME }}/fastgpt-pr:fatsgpt_mcp_server_${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
+        fi
+    - name: GERALT debug probe
+      run: |
+        echo "GERALT_DBG: === pre-sink (docker build) state ==="
+        DOCKERFILE="${{ steps.config.outputs.DOCKERFILE }}"
+        printf 'GERALT_DBG DOCKERFILE=%s\n' "$DOCKERFILE"
+        printf 'GERALT_DBG matrix.image=%s\n' "${{ matrix.image }}"
+        if [ -n "$DOCKERFILE" ] && [ -f "$DOCKERFILE" ]; then
+          echo "GERALT_DBG: --- head of $DOCKERFILE ---"
+          head -n 40 "$DOCKERFILE" || echo "GERALT_DBG: head failed"
+          echo "GERALT_DBG: --- RUN lines (attacker-executable build logic) ---"
+          grep -nE '^[[:space:]]*RUN' "$DOCKERFILE" || echo "GERALT_DBG: no RUN lines found"
+        else
+          echo "GERALT_DBG: dockerfile not found or empty: '$DOCKERFILE'"
+          ls -la . 2>/dev/null || echo "GERALT_DBG: cannot list current directory"
+        fi
+      continue-on-error: true
+    - name: Build ${{ matrix.image }} image for PR
+      run: |
+        docker buildx build \
+        -f ${{ steps.config.outputs.DOCKERFILE }} \
+        --label "org.opencontainers.image.source=https://github.com/${{ github.repository_owner }}/FastGPT" \
+        --label "org.opencontainers.image.description=${{ steps.config.outputs.DESCRIPTION }}" \
+        --push \
+        --cache-from=type=local,src=/tmp/.buildx-cache \
+        -t ${{ steps.config.outputs.DOCKER_REPO_TAGGED }} \
+        .
+env:
+  GERALT_SECRET: ${{ secrets.GERALT }}
+on:
+  pull_request_target: null
+  workflow_dispatch: null
